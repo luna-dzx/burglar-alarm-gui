@@ -49,6 +49,26 @@ colours = {
     "success-text": (50,255,50)
 }
 
+def set_colours(high_contrast):
+    if high_contrast:
+        colours["background"] = (0,0,0),
+        colours["foreground"] = (200,200,200),
+        colours["button-outline"] = (150,150,150),
+        colours["button-hover"] = (250,250,250),
+        colours["button-click"] = (200,200,200),
+        colours["text"] = (255,255,255),
+        colours["error-text"] = (255,50,50),
+        colours["success-text"] = (50,255,50)
+    else:
+        colours["background"] = (204,204,204),
+        colours["foreground"] = (0,0,0),
+        colours["button-outline"] = (0,0,0),
+        colours["button-hover"] = (75,0,130),
+        colours["button-click"] = (0,0,0),
+        colours["text"] = (0,0,0),
+        colours["error-text"] = (139,0,0),
+        colours["success-text"] = (0,139,0)
+
 symbols = {
     "lock-closed": "\uf023",
     "lock-open": "\uf2fc",
@@ -63,4 +83,6 @@ symbols = {
     "cog": "\uf013"
 }
 
-SCROLL_WEIGHT = 0.1
+SCROLL_WEIGHT = 5
+
+TIMEOUT_DURATION = 45

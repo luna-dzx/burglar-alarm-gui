@@ -110,7 +110,7 @@ class UserScrollGrid:
         for i,name in enumerate(self.users):
             xi = i%self.columns
             yi = i//self.columns
-            
+
             x = gap * (xi+1) + elem_size[0] * xi
             y = self.padding * (yi+1) + elem_size[1] * yi
 
@@ -154,11 +154,20 @@ class UserScrollGrid:
 
     def process(self, event):
         if event.type == pygame.MOUSEWHEEL:
-            self.scroll -= event.y * SCROLL_WEIGHT * self.rect.height
-            if self.scroll > self.max_scroll:
-                self.scroll = self.max_scroll
-            if self.scroll < 0:
-                self.scroll = 0
+
+            bar_height = (self.rect.height / self.inner_height) * self.rect.height
+
+            y = (self.scroll / self.rect.height) * bar_height
+            y -= event.y * SCROLL_WEIGHT
+
+            if y < 0:
+                y = 0
+            if y + bar_height > self.rect.height:
+                y = self.rect.height - bar_height
+
+            scroll_offset = y
+            self.scroll = (scroll_offset / bar_height) * self.rect.height
+
         if event.type == pygame.MOUSEBUTTONUP:
             self.scroll_grabbed = False
 
@@ -178,7 +187,7 @@ class UserScrollGrid:
                 if self.confirm_button.process(event):
                     self.confirming_remove = False
                     shutil.rmtree("faces/"+self.users[self.to_remove]+"/")
-                    return True
+                    return self.users[self.to_remove]
 
                 if self.deny_button.process(event):
                     self.confirming_remove = False
@@ -189,7 +198,7 @@ class UserScrollGrid:
                         if button.process(event, self.alt_mouse_pos):
                             self.to_remove = i
                             self.confirming_remove = True
-            return False
+        return ""
 
 
 
@@ -248,6 +257,134 @@ class UserScrollGrid:
             self.deny_button.set_rect((popup_rect.centerx+popup_pad*0.5, y, popup_rect.width/2 - popup_pad*1.5, button_height))
             self.confirm_button.render(surface)
             self.deny_button.render(surface)
+
+
+class HistoryScrollGrid:
+    def __init__(self, rect, padding, log, scroll_bar_width = 20, outline_width=2):
+
+        self.header_height = 80
+
+        self.rect = pygame.Rect(rect[0],rect[1]+self.header_height,rect[2]-scroll_bar_width,rect[3] - self.header_height)
+        self.columns = 3
+        self.padding = padding
+        self.outline_width = outline_width
+        self.scroll_bar_width = scroll_bar_width
+
+        self.scroll = 0
+
+        self.buttons = []
+        self.alt_mouse_pos = (0,0)
+        self.render_surface(log)
+        self.max_scroll = self.inner_height - self.rect.height
+
+        self.scroll_grabbed = False
+
+    def set_pos(self, pos):
+        self.rect.topleft = (pos[0], pos[1]+self.header_height)
+
+    def render_surface(self, log):
+
+        mouse_pos = pygame.mouse.get_pos()
+        self.alt_mouse_pos = (mouse_pos[0] - self.rect.left, mouse_pos[1] - self.rect.top + self.scroll)
+
+        elem_width = self.rect.width/self.columns - self.padding
+
+        img_size = elem_width * 0.6
+        elem_height = 40 + fonts["medium"].get_height() + img_size + 60
+
+        elem_size = (elem_width, elem_height)
+        gap = (self.rect.width - self.columns * elem_size[0]) / (self.columns + 1)
+
+        line_height = fonts["medium"].get_height()
+        y = len(log[0]) * line_height
+
+        self.inner_height = max(y,self.rect.height)
+        self.surface = pygame.Surface((self.rect.width,self.inner_height))
+        self.surface.fill(colours["background"])
+
+        col_width = self.rect.width/3
+
+        for i in range(3):
+            x = col_width * i
+            pygame.draw.line(self.surface, colours["foreground"], (x,0), (x,self.inner_height), 3)
+
+        y = 0
+        for i in range(len(log[0])):
+
+            for j in range(3):
+                centre_x = col_width*(j+0.5)
+                text = fonts["medium"].render(log[j][i], True, colours["text"])
+                self.surface.blit(text, (centre_x - text.get_rect().width/2, y))
+
+            y += line_height
+
+
+    def process(self, event):
+        if event.type == pygame.MOUSEWHEEL:
+
+            bar_height = (self.rect.height / self.inner_height) * self.rect.height
+
+            y = (self.scroll / self.rect.height) * bar_height
+            y -= event.y * SCROLL_WEIGHT
+
+            if y < 0:
+                y = 0
+            if y + bar_height > self.rect.height:
+                y = self.rect.height - bar_height
+
+            scroll_offset = y
+            self.scroll = (scroll_offset / bar_height) * self.rect.height
+
+        if event.type == pygame.MOUSEBUTTONUP:
+            self.scroll_grabbed = False
+
+
+    def render(self, surface, log):
+
+        self.render_surface(log)
+
+        mouse_pos = pygame.mouse.get_pos()
+        mouse_pressed = pygame.mouse.get_pressed()[0]
+
+        scroll_rect = pygame.Rect(self.rect.right-1, self.rect.top, self.scroll_bar_width+1, self.rect.height)
+
+        bar_height = (self.rect.height / self.inner_height) * self.rect.height
+        scroll_offset = (self.scroll / self.rect.height) * bar_height
+
+        if mouse_pressed:
+            if scroll_rect.collidepoint(mouse_pos):
+                self.scroll_grabbed = True
+
+        if self.scroll_grabbed:
+            y = mouse_pos[1] - bar_height / 2 - self.rect.top
+            if y < 0:
+                y = 0
+            if y + bar_height > self.rect.height:
+                y = self.rect.height - bar_height
+
+            scroll_offset = y
+            self.scroll = (scroll_offset / bar_height) * self.rect.height
+
+        # cropped surface
+        surface.blit(self.surface, self.rect.topleft, (0, self.scroll, self.rect.width, self.rect.height))
+
+        # outlines
+        pygame.draw.rect(surface, colours["foreground"], self.rect, self.outline_width)
+        pygame.draw.rect(surface, colours["foreground"], (self.rect.left, self.rect.top - self.header_height, self.rect.width/3 + 1, self.header_height+1), self.outline_width)
+        pygame.draw.rect(surface, colours["foreground"], (self.rect.left + self.rect.width/3, self.rect.top - self.header_height, self.rect.width/3 + 1, self.header_height+1), self.outline_width)
+        pygame.draw.rect(surface, colours["foreground"], (self.rect.left + self.rect.width*(2/3), self.rect.top - self.header_height, self.rect.width/3, self.header_height+1), self.outline_width)
+        pygame.draw.rect(surface, colours["foreground"], scroll_rect, self.outline_width)
+        # scroll rectangle
+        pygame.draw.rect(surface, colours["foreground"], (self.rect.right,self.rect.top+scroll_offset,self.scroll_bar_width,bar_height))
+
+        name_text = fonts["medium"].render("Name", True, colours["text"])
+        action_text = fonts["medium"].render("Action", True, colours["text"])
+        time_text = fonts["medium"].render("Time", True, colours["text"])
+
+        col_width = self.rect.width/3
+        surface.blit(name_text, (self.rect.left + col_width*0.5 - name_text.get_rect().width/2, self.rect.top-self.header_height+5))
+        surface.blit(action_text, (self.rect.left + col_width*1.5 - action_text.get_rect().width/2, self.rect.top-self.header_height+5))
+        surface.blit(time_text, (self.rect.left + col_width*2.5 - time_text.get_rect().width/2, self.rect.top-self.header_height+5))
 
 
 

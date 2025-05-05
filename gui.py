@@ -166,12 +166,15 @@ def read_profile():
     if not os.path.exists("user_profile.pickle"):
         print("no profile, setting defaults")
 
+        log = [[],[],[]]
+
         user_profile = {
             "pin": "123456",
             "font-size": 2,
             "alarm-volume": 0.5,
             "high-contrast": False,
             "policy-agreed": False,
+            "system-log": log
         }
 
         write_profile(user_profile)
@@ -181,7 +184,16 @@ def read_profile():
 
 user_profile = read_profile()
 select_font(user_profile["font-size"])
+set_colours(user_profile["high-contrast"])
 print(user_profile) # TODO: remove
+
+from datetime import datetime
+def log_action(name,action):
+    time = datetime.now().strftime("%H:%M:%S,%m/%d/%y")
+    user_profile["system-log"][0].append(name)
+    user_profile["system-log"][1].append(action)
+    user_profile["system-log"][2].append(time)
+    write_profile(user_profile)
 
 from enum import Enum
 
@@ -209,7 +221,6 @@ class Screen(Enum):
     MANAGE_USERS = 8
     PRIVACY_POLICY = 9
     CAMERA_UNLOCK = 10
-
 
 
 def system_activity():
@@ -381,7 +392,7 @@ def home_screen(events):
 
 
 live_camera_button = Button((0,0,0,0), "Live Camera Feed")
-system_history_button = Button((0,0,0,0), "System History")
+system_history_button = Button((0,0,0,0), "Facial Recognition Log")
 change_pin_button = Button((0,0,0,0), "Change PIN Code")
 font_slider = Slider((0,0,WIDTH/4 - 90,0),["Small", "Medium", "Large"],True, offset=user_profile["font-size"])
 alarm_slider = Slider((0,0,WIDTH/4 - 90,0),["Quiet", "Loud"], offset=user_profile["alarm-volume"])
@@ -540,6 +551,9 @@ def settings_screen(events):
     for event in events:
         checked = high_contrast.process(event)
         if checked is not None:
+
+            set_colours(checked)
+
             user_profile["high-contrast"] = checked
             write_profile(user_profile)
 
@@ -569,7 +583,6 @@ def settings_screen(events):
             current_screen = Screen.PRIVACY_POLICY
 
     high_contrast.render(display)
-
 
 def multi_line_text(words, rect, font, h_pad = 10, comma=False):
     lines = [[]]
@@ -663,16 +676,23 @@ def live_camera_screen(events):
     
     multi_line_text(detections, (start_x, y, WIDTH*0.3, HEIGHT*0.25), fonts["small"], comma=True)
 
+history_log = HistoryScrollGrid((0,0,WIDTH*0.8,HEIGHT*0.7), 10, user_profile["system-log"])
 
 def system_history_screen(events):
 
+    centre_x = WIDTH/2
     y = HEADER_HEIGHT + 30
-    centre_x = WIDTH / 2
 
-    title_text = fonts["big"].render("System History", True, colours["text"])
+    title_text = fonts["big"].render("Facial Recognition Log", True, colours["text"])
     display.blit(title_text, (centre_x - title_text.get_rect().width/2, y))
 
-    # TODO: scrolling table of history
+    y += title_text.get_rect().height + 20
+    history_log.set_pos((centre_x - WIDTH*0.4, y))
+
+    for event in events:
+        history_log.process(event)
+
+    history_log.render(display, user_profile["system-log"])
 
 
 old_pin_field = TextField((0,0), max_length=6, min_width=WIDTH*0.2, numbers_only=True, confirmable=False)
@@ -914,16 +934,19 @@ def add_face_screen(events):
             if confirm_button.process(event):
                 add_face_phase = 0
 
-                os.makedirs(os.path.join("faces", name_field.text),exist_ok=True)
+                name = name_field.text.title()
 
-                count = len(os.listdir("faces/"+name_field.text+"/"))
+                os.makedirs(os.path.join("faces", name),exist_ok=True)
+
+                count = len(os.listdir("faces/"+name+"/"))
                 index = (count + 2) // 3
 
-                cv2.imwrite("faces/"+name_field.text+"/"+str(index)+"_left_img.png",add_images_raw[0])
-                cv2.imwrite("faces/"+name_field.text+"/"+str(index)+"_forward_img.png",add_images_raw[1])
-                cv2.imwrite("faces/"+name_field.text+"/"+str(index)+"_right_img.png",add_images_raw[2])
+                cv2.imwrite("faces/"+name+"/"+str(index)+"_left_img.png",add_images_raw[0])
+                cv2.imwrite("faces/"+name+"/"+str(index)+"_forward_img.png",add_images_raw[1])
+                cv2.imwrite("faces/"+name+"/"+str(index)+"_right_img.png",add_images_raw[2])
 
-                name_field.text = ""
+                log_action(name,"User Added")
+                name = ""
 
                 train_model()
 
@@ -973,7 +996,9 @@ def manage_users_screen(events):
 
 
     for event in events:
-        if users_grid.process(event):
+        name_removed = users_grid.process(event)
+        if len(name_removed) >= 1:
+            log_action(name_removed, "User Removed")
             train_model()
 
 
@@ -1026,6 +1051,7 @@ def camera_unlock(events):
         system_locked = False
         current_screen = Screen.HOME
         display.fill(colours["background"])
+        log_action(detections[0], "Unlocked")
         return
 
     centre_x = camera_area_x / 2
@@ -1067,7 +1093,7 @@ screen_functions = {
 }
 
 
-current_screen = Screen.MANAGE_USERS
+current_screen = Screen.SYSTEM_HISTORY
 
 def back_button_dest():
     if current_screen.value < 4:
@@ -1084,14 +1110,23 @@ def home_button_dest():
     else:
         return Screen.HOME
 
+import time,math
+no_input_timestamp = time.time()
+
 
 running = True
 while running:
+
+    current_time = time.time()
+
+    countdown = TIMEOUT_DURATION - (current_time - no_input_timestamp)
+    if countdown <= 0 and current_screen.value > 1:
+        current_screen = Screen.LOGIN
+
     events = pygame.event.get()
 
     home_dest = home_button_dest()
     back_dest = back_button_dest()
-
 
     header_title = fonts["big"].render("Security System Control", True, colours["text"])
     header_subtitle = fonts["medium"].render("Manage the features of your security system", True, colours["text"])
@@ -1112,12 +1147,18 @@ while running:
             if home_button.process(event):
                 current_screen = home_dest
 
+        no_input_timestamp = time.time()
+
 
     display.fill(colours["background"])
 
     # header
     display.blit(header_title, ((WIDTH-header_title.get_rect().width)/2, 10))
     display.blit(header_subtitle, ((WIDTH-header_subtitle.get_rect().width)/2, 10 + header_title.get_rect().height))
+
+    if current_screen.value > 1:
+        count_text = fonts["medium"].render(str(math.ceil(countdown)), True, colours["text"])
+        display.blit(count_text, (home_button.rect.left - 60 - count_text.get_rect().width, home_button.rect.centery - count_text.get_rect().height/2))
 
     if back_dest is not None:
         back_button.render(display)
