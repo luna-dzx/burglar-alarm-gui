@@ -50,7 +50,7 @@ class Button:
         return mouse_pressed and hovering
 
 
-class ScrollGrid:
+class UserScrollGrid:
     def __init__(self, rect, columns, padding, scroll_bar_width = 20, outline_width=2):
         self.rect = pygame.Rect(rect[0],rect[1],rect[2]-scroll_bar_width,rect[3])
         self.columns = columns
@@ -58,9 +58,54 @@ class ScrollGrid:
         self.outline_width = outline_width
         self.scroll_bar_width = scroll_bar_width
 
-        self.inner_height = 400
+        self.render_surface()
         self.max_scroll = self.inner_height - self.rect.height
         self.scroll = 0
+
+        self.scroll_grabbed = False
+
+    def set_pos(self, pos):
+        self.rect.topleft = pos
+
+    def render_surface(self):
+        self.inner_height = 2000
+        self.surface = pygame.Surface((self.rect.width,self.inner_height))
+        self.surface.fill(colours["background"])
+        self.buttons = []
+
+        elem_width = self.rect.width/self.columns - self.padding
+        elem_size = (elem_width, elem_width)
+        gap = (self.rect.width - self.columns * elem_size[0]) / (self.columns + 1)
+
+        users = ["Lucy", "Bob", "Jerma", "Geraldine", "Bartholemew", "Grindle"]
+
+        for i,name in enumerate(users):
+            xi = i%self.columns
+            yi = i//self.columns
+            
+            x = gap * (xi+1) + elem_size[0] * xi
+            y = self.padding * (yi+1) + elem_size[1] * yi
+
+            bounding_rect = (x,y,elem_size[0],elem_size[1])
+
+            pygame.draw.rect(self.surface, colours["foreground"], bounding_rect, self.outline_width)
+            centre_x = x + elem_size[0] / 2
+            y += 10
+            name_text = fonts["medium"].render(name, True, colours["text"])
+            rect = name_text.get_rect()
+            text_x = centre_x - rect.width/2
+
+            self.surface.blit(name_text, (text_x, y))
+            pygame.draw.rect(self.surface, colours["foreground"], (text_x - 20, y, rect.width + 40, rect.height), self.outline_width)
+
+            y = bounding_rect[0] + elem_size[1] - 80
+            bw = elem_size[0] * 0.5
+            button = Button((centre_x - bw*0.5, y, bw, 60), "Delete User")
+            self.buttons.append(button)
+
+            button.render(self.surface)
+
+
 
     def process(self, event):
         if event.type == pygame.MOUSEWHEEL:
@@ -69,19 +114,46 @@ class ScrollGrid:
                 self.scroll = self.max_scroll
             if self.scroll < 0:
                 self.scroll = 0
+        if event.type == pygame.MOUSEBUTTONUP:
+            self.scroll_grabbed = False
 
     def render(self, surface):
+
+
+        self.render_surface()
+
+        mouse_pos = pygame.mouse.get_pos()
+        mouse_pressed = pygame.mouse.get_pressed()[0]
+
+        scroll_rect = pygame.Rect(self.rect.right-1, self.rect.top, self.scroll_bar_width+1, self.rect.height)
 
         bar_height = (self.rect.height / self.inner_height) * self.rect.height
         scroll_offset = (self.scroll / self.rect.height) * bar_height
 
-        # background
-        pygame.draw.rect(surface, colours["background"], self.rect)
+        if mouse_pressed:
+            if scroll_rect.collidepoint(mouse_pos):
+                self.scroll_grabbed = True
+
+        if self.scroll_grabbed:
+            y = mouse_pos[1] - bar_height / 2 - self.rect.top
+            if y < 0:
+                y = 0
+            if y + bar_height > self.rect.height:
+                y = self.rect.height - bar_height
+
+            scroll_offset = y
+            self.scroll = (scroll_offset / bar_height) * self.rect.height
+                
+
+        # cropped surface
+        surface.blit(self.surface, self.rect.topleft, (0, self.scroll, self.rect.width, self.rect.height))
+
         # outlines
         pygame.draw.rect(surface, colours["foreground"], self.rect, self.outline_width)
-        pygame.draw.rect(surface, colours["foreground"], (self.rect.right-1, self.rect.top, self.scroll_bar_width+1, self.rect.height), self.outline_width)
+        pygame.draw.rect(surface, colours["foreground"], scroll_rect, self.outline_width)
         # scroll rectangle
         pygame.draw.rect(surface, colours["foreground"], (self.rect.right,self.rect.top+scroll_offset,self.scroll_bar_width,bar_height))
+
 
 class Slider:
     def __init__(self, rect, steps, snap=False, width=1, select_width=7, offset = 0):

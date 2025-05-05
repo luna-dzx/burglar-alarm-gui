@@ -185,10 +185,6 @@ print(user_profile) # TODO: remove
 from enum import Enum
 
 
-scroll_grid = ScrollGrid((50,500,400,300),3,(10,10))
-
-slider = Slider((50,500,200,30), ["a","b","c","d"], snap=True)
-
 HEADER_HEIGHT = HEIGHT * 0.15
 SIDE_BAR_OFFSET = WIDTH * 0.7
 
@@ -961,8 +957,26 @@ def add_face_screen(events):
             x += img_diameter + 10
 
 
+users_grid = UserScrollGrid((0,0,WIDTH*0.8,HEIGHT*0.7), 3, 10)
+
 def manage_users_screen(events):
-    pass
+
+    centre_x = WIDTH/2
+    y = HEADER_HEIGHT + 30
+
+    title_text = fonts["big"].render("Manage Stored Users", True, colours["text"])
+    display.blit(title_text, (centre_x - title_text.get_rect().width/2, y))
+
+    y += title_text.get_rect().height + 20
+    users_grid.set_pos((centre_x - WIDTH*0.4, y))
+
+
+    for event in events:
+        users_grid.process(event)
+
+
+    users_grid.render(display)
+    
 
 privacy_policy = """This system uses facial recognition to enhance your property's security. In accordance with the UK General Data Protection Regulation (UK GDPR) and the Data Protection Act 2018, we collect and process facial images of trusted users to authenticate access. This data is processed with your explicit consent and stored securely within the system. 
  
@@ -980,7 +994,7 @@ def privacy_policy_screen(events):
     display.blit(title_text, (centre_x - title_text.get_rect().width/2, y))
 
     y += title_text.get_rect().height + 20
-    rect = (centre_x - WIDTH*0.4, y, WIDTH*0.8, HEIGHT-y - 40)
+    rect = (centre_x - WIDTH*0.4, y, WIDTH*0.8, HEIGHT*0.5)
     pygame.draw.rect(display, colours["foreground"], rect, 2)
 
     multi_line_text(privacy_policy.split(' '), rect, fonts["small"])
@@ -1051,7 +1065,7 @@ screen_functions = {
 }
 
 
-current_screen = Screen.PRIVACY_POLICY
+current_screen = Screen.MANAGE_USERS
 
 def back_button_dest():
     if current_screen.value < 4:
