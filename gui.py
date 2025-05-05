@@ -153,6 +153,32 @@ def get_display_size():
 WIDTH, HEIGHT = get_display_size()
 display = pygame.display.set_mode((WIDTH, HEIGHT))
 
+import pickle
+
+def write_profile(profile):
+    with open("user_profile.pickle", "wb") as file:
+        pickle.dump(profile, file, pickle.HIGHEST_PROTOCOL)
+
+def read_profile():
+    if not os.path.exists("user_profile.pickle"):
+        print("no profile, setting defaults")
+
+        user_profile = {
+            "pin": "123456",
+            "font-size": 2,
+            "alarm-volume": 0.5,
+            "high-contrast": False,
+            "policy-agreed": False,
+        }
+
+        write_profile(user_profile)
+
+    with open("user_profile.pickle", 'rb') as f:
+        return pickle.load(f)
+
+user_profile = read_profile()
+select_font(user_profile["font-size"])
+print(user_profile)
 
 from enum import Enum
 
@@ -213,15 +239,14 @@ def system_activity():
 
 
 pin_inp = TextField((0, 0), max_length=6, numbers_only=True, always_active=True, min_width = 200)
-global invalid_pin, current_screen, correct_pin
+global invalid_pin, current_screen
 invalid_pin = False
-correct_pin = "123456" # TODO: load from file
 
 face_scan_button = Button((0,0,SIDE_BAR_OFFSET*0.3, SIDE_BAR_OFFSET*0.3 * (3.0/4.0)), symbols["camera"], font_size = 2)
 
 def login_screen(events):
 
-    global invalid_pin, current_screen, correct_pin
+    global invalid_pin, current_screen, system_armed
 
     submitted_pin = ""
     for event in events:
@@ -230,8 +255,9 @@ def login_screen(events):
             submitted_pin = submit
 
     if submitted_pin != "":
-        if submitted_pin == correct_pin:
+        if submitted_pin == user_profile["pin"]:
             current_screen = Screen.HOME
+            system_armed = False
             system_locked = False
             submitted_pin = ""
             invalid_pin = False
@@ -331,6 +357,7 @@ def home_screen(events):
 
     if arm_button.render(display):
         system_armed = True
+        current_screen = Screen.LOGIN
     if disarm_button.render(display):
         system_armed = False
 
@@ -357,9 +384,9 @@ def home_screen(events):
 live_camera_button = Button((0,0,0,0), "Live Camera Feed")
 system_history_button = Button((0,0,0,0), "System History")
 change_pin_button = Button((0,0,0,0), "Change PIN Code")
-font_slider = Slider((0,0,WIDTH/4 - 90,0),["Small", "Medium", "Large"],True, offset=1)
-alarm_slider = Slider((0,0,0,0),["Quiet", "Loud"])
-high_contrast = CheckBox((0,0))
+font_slider = Slider((0,0,WIDTH/4 - 90,0),["Small", "Medium", "Large"],True, offset=user_profile["font-size"])
+alarm_slider = Slider((0,0,WIDTH/4 - 90,0),["Quiet", "Loud"], offset=user_profile["alarm-volume"])
+high_contrast = CheckBox((0,0), checked=user_profile["high-contrast"])
 add_face_button = Button((0,0,0,0), "Add New Face")
 manage_users_button = Button((0,0,0,0), "Manage Stored Users")
 privacy_button = Button((0,0,0,0), "Privacy Policy")
@@ -421,10 +448,13 @@ def settings_screen(events):
     slider_height = 34
     slider_padding = 30
     font_slider.set_rect((centre_x + slider_padding, y + (font_size_text.get_rect().height - slider_height)/2, WIDTH/4 - 3*slider_padding, slider_height))
-    font_val = int(font_slider.render(display))
-
-    select_font(font_val)
-
+    
+    slider_val = font_slider.render(display)
+    if slider_val is not None:
+        font_val = int(slider_val)
+        user_profile["font-size"] = font_val
+        select_font(font_val)
+        write_profile(user_profile)
 
     y += font_size_text.get_rect().height + 40
 
@@ -432,7 +462,10 @@ def settings_screen(events):
     display.blit(alarm_volume_text, (WIDTH/8 - alarm_volume_text.get_rect().width / 2, y))
 
     alarm_slider.set_rect((centre_x + slider_padding, y + (alarm_volume_text.get_rect().height - slider_height)/2, WIDTH/4 - 3*slider_padding, slider_height))
-    alarm_slider.render(display)
+    slider_val = alarm_slider.render(display)
+    if slider_val is not None:
+        user_profile["alarm-volume"] = slider_val
+        write_profile(user_profile)
 
     y += alarm_volume_text.get_rect().height + 40
 
@@ -482,9 +515,8 @@ def settings_screen(events):
     x = centre_x - agree_width/2
 
     string = symbols["empty-box"]
-    if data_agree:
+    if user_profile["policy-agreed"]:
         string = symbols["checked-box"]
-
 
     check_pos = (x + checkbox_padding, centre_y)
 
@@ -504,12 +536,17 @@ def settings_screen(events):
     display.blit(check_text, (check_pos[0] - check_text.get_rect().width/2, check_pos[1] - check_text.get_rect().height/2))
 
 
-    # checkboxes (need processing)
+    # processing:
 
     for event in events:
-        high_contrast.process(event)
+        checked = high_contrast.process(event)
+        if checked is not None:
+            user_profile["high-contrast"] = checked
+            write_profile(user_profile)
+
         if data_agree_button.process(event):
-            data_agree = not data_agree
+            user_profile["policy-agreed"] = not user_profile["policy-agreed"]
+            write_profile(user_profile)
 
         if live_camera_button.process(event):
             current_screen = Screen.LIVE_CAMERA
@@ -636,7 +673,7 @@ invalid_pin_length = 0
 
 def change_pin_screen(events):
 
-    global correct_pin, invalid_pin2, non_matching_pins, invalid_pin_length
+    global invalid_pin2, non_matching_pins, invalid_pin_length
 
     y = HEADER_HEIGHT + 40
     centre_x = WIDTH / 2
@@ -713,7 +750,7 @@ def change_pin_screen(events):
 
             invalid = False
 
-            if old != correct_pin:
+            if old != user_profile["pin"]:
                 invalid_pin2 = -1
                 invalid = True
             if len(new) != 6:
@@ -724,7 +761,8 @@ def change_pin_screen(events):
                 invalid = True
 
             if not invalid:
-                correct_pin = new
+                user_profile["pin"] = new
+                write_profile(user_profile)
 
     old_pin_field.render(display)
     new_pin_field.render(display)

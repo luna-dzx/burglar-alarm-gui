@@ -100,6 +100,8 @@ class Slider:
         self.select_width = select_width
         self.queue_snap = False
 
+        self.just_clicked = False
+
     def set_rect(self,rect):
         self.rect = pygame.Rect(rect[0],rect[1],rect[2],rect[3])
         self.start = (rect[0], rect[1] + rect[3]*0.5)
@@ -146,7 +148,12 @@ class Slider:
                          (self.rect.left + self.select_offset - self.select_width/2, self.rect.top,
                           self.select_width, self.rect.height+1))
 
-        return (to_return / self.rect.width) * (len(self.steps) - 1)
+        if self.just_clicked and not mouse_pressed:
+            self.just_clicked = mouse_pressed
+            return (to_return / self.rect.width) * (len(self.steps) - 1)
+
+        self.just_clicked = mouse_pressed
+        return None
 
 
 class TextField:
@@ -179,7 +186,10 @@ class TextField:
             if not self.always_active:
                 mouse_pos = pygame.mouse.get_pos()
                 rect = pygame.Rect(0,0,self.width, self.height)
-                if rect.collidepoint((mouse_pos[0] - self.pos[0], mouse_pos[1] - self.pos[1])):
+
+                x,y = self.get_raw_pos()
+
+                if rect.collidepoint((mouse_pos[0] - x, mouse_pos[1] - y)):
                     self.active = True
                 else:
                     self.active = False
@@ -209,7 +219,17 @@ class TextField:
 
         return ""
 
-    
+    def get_raw_pos(self):
+        x = self.pos[0]
+        y = self.pos[1]
+
+        if self.centred[0]:
+            x -= self.width/2
+        if self.centred[1]:
+            y -= self.height/2
+
+        return x,y
+
 
     def render(self, surface):
 
@@ -220,25 +240,14 @@ class TextField:
         if len(string) == 0:
             string = " "
         text = fonts["medium"].render(" " + string + " ", True, colours["text"])
+        
         self.height = text.get_rect().height
-
-        x = self.pos[0]
-        y = self.pos[1]
-
-        if self.centred[0]:
-            x -= text.get_rect().width/2
-        if self.centred[1]:
-            y -= text.get_rect().height/2
-
-        surface.blit(text, (x,y))
-
-        x = self.pos[0]
         width = max(text.get_rect().width, self.min_width)
-
-        if self.centred[0]:
-            x -= width/2
-
         self.width = width
+
+        x,y = self.get_raw_pos()
+
+        surface.blit(text, (x + (self.width - text.get_rect().width) / 2,y))
 
         if mouse_pressed and not self.always_active:
             rect = text.get_rect()
@@ -275,8 +284,9 @@ class CheckBox:
 
             if text.get_rect().collidepoint((mouse_pos[0] - text_pos[0], mouse_pos[1] - text_pos[1])):
                 self.checked = not self.checked
+                return self.checked
 
-        return self.checked
+        return None
 
     def get_width(self):
 
