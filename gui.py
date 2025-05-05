@@ -29,7 +29,6 @@ print("haar cascade loaded")
 
 # load LBHF for recognizing face
 recognizer = cv2.face.LBPHFaceRecognizer_create()
-data_path = 'faces'
 
 global faces, labels, names_dict, model_trained
 model_trained = False
@@ -45,8 +44,8 @@ def train_model():
 
     if os.path.exists("faces"):
 
-        for person_name in os.listdir(data_path):
-            person_dir = os.path.join(data_path, person_name)
+        for person_name in os.listdir("faces"):
+            person_dir = os.path.join("faces", person_name)
             for filename in os.listdir(person_dir):
                 img_path = os.path.join(person_dir, filename)
                 img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
@@ -54,6 +53,8 @@ def train_model():
                 labels.append(name_index)
             names_dict[name_index] = person_name
             name_index+=1
+
+    model_trained = False
 
     if len(faces) > 0:
         recognizer.train(faces, np.array(labels))
@@ -124,7 +125,7 @@ def recognize_faces(surface, frame, frame_size, skip_render = False):
         label_txt = "???"#str(confidence)
         if model_trained:
             label, confidence = recognizer.predict(crop_gray)
-            if confidence < 115:
+            if confidence < 100:
                 label_txt = names_dict[label]
                 detections.append(label_txt)
 
@@ -957,7 +958,7 @@ def add_face_screen(events):
             x += img_diameter + 10
 
 
-users_grid = UserScrollGrid((0,0,WIDTH*0.8,HEIGHT*0.7), 3, 10)
+users_grid = UserScrollGrid((0,0,WIDTH*0.8,HEIGHT*0.7), 4, 10)
 
 def manage_users_screen(events):
 
@@ -972,7 +973,8 @@ def manage_users_screen(events):
 
 
     for event in events:
-        users_grid.process(event)
+        if users_grid.process(event):
+            train_model()
 
 
     users_grid.render(display)
@@ -994,7 +996,7 @@ def privacy_policy_screen(events):
     display.blit(title_text, (centre_x - title_text.get_rect().width/2, y))
 
     y += title_text.get_rect().height + 20
-    rect = (centre_x - WIDTH*0.4, y, WIDTH*0.8, HEIGHT*0.5)
+    rect = (centre_x - WIDTH*0.4, y, WIDTH*0.8, HEIGHT*0.7)
     pygame.draw.rect(display, colours["foreground"], rect, 2)
 
     multi_line_text(privacy_policy.split(' '), rect, fonts["small"])

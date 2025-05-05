@@ -1,4 +1,5 @@
-import pygame
+import pygame, os, cv2, shutil
+import numpy as np
 from globals import *
 
 class Button:
@@ -14,17 +15,24 @@ class Button:
     def set_rect(self, rect):
         self.rect = pygame.Rect(rect[0],rect[1],rect[2],rect[3])
 
-    def process(self, event):
+    def process(self, event, alt_mouse_pos=None):
         if event.type == pygame.MOUSEBUTTONUP:
-            mouse_pos = pygame.mouse.get_pos()
+            if alt_mouse_pos is None:
+                mouse_pos = pygame.mouse.get_pos()
+            else:
+                mouse_pos = alt_mouse_pos
+
             if self.rect.collidepoint(mouse_pos):
                 return True
 
         return False
 
-    def render(self, surface):
+    def render(self, surface, alt_mouse_pos= None):
 
-        mouse_pos = pygame.mouse.get_pos()
+        if alt_mouse_pos is None:
+            mouse_pos = pygame.mouse.get_pos()
+        else:
+            mouse_pos = alt_mouse_pos
         mouse_pressed = pygame.mouse.get_pressed()[0]
 
         outline_colour = colours["button-outline"]
@@ -58,9 +66,17 @@ class UserScrollGrid:
         self.outline_width = outline_width
         self.scroll_bar_width = scroll_bar_width
 
+        self.scroll = 0
+        self.to_remove = -1
+        self.confirming_remove = False
+
+        self.buttons = []
+        self.alt_mouse_pos = (0,0)
         self.render_surface()
         self.max_scroll = self.inner_height - self.rect.height
-        self.scroll = 0
+
+        self.confirm_button = Button((0,0,0,0), "Confirm")
+        self.deny_button = Button((0,0,0,0), "Deny")
 
         self.scroll_grabbed = False
 
@@ -68,18 +84,30 @@ class UserScrollGrid:
         self.rect.topleft = pos
 
     def render_surface(self):
-        self.inner_height = 2000
-        self.surface = pygame.Surface((self.rect.width,self.inner_height))
-        self.surface.fill(colours["background"])
-        self.buttons = []
+
+        mouse_pos = pygame.mouse.get_pos()
+        self.alt_mouse_pos = (mouse_pos[0] - self.rect.left, mouse_pos[1] - self.rect.top + self.scroll)
 
         elem_width = self.rect.width/self.columns - self.padding
-        elem_size = (elem_width, elem_width)
+
+        img_size = elem_width * 0.6
+        elem_height = 40 + fonts["medium"].get_height() + img_size + 60
+
+        elem_size = (elem_width, elem_height)
         gap = (self.rect.width - self.columns * elem_size[0]) / (self.columns + 1)
 
-        users = ["Lucy", "Bob", "Jerma", "Geraldine", "Bartholemew", "Grindle"]
+        self.users = os.listdir("faces")
 
-        for i,name in enumerate(users):
+        yi = 1 + (len(self.users)-1) // self.columns
+        y = self.padding * yi + elem_size[1] * yi
+
+        self.inner_height = max(y,self.rect.height)
+        self.surface = pygame.Surface((self.rect.width,self.inner_height))
+        self.surface.fill(colours["background"])
+
+        self.buttons = []
+
+        for i,name in enumerate(self.users):
             xi = i%self.columns
             yi = i//self.columns
             
@@ -98,12 +126,29 @@ class UserScrollGrid:
             self.surface.blit(name_text, (text_x, y))
             pygame.draw.rect(self.surface, colours["foreground"], (text_x - 20, y, rect.width + 40, rect.height), self.outline_width)
 
-            y = bounding_rect[0] + elem_size[1] - 80
-            bw = elem_size[0] * 0.5
-            button = Button((centre_x - bw*0.5, y, bw, 60), "Delete User")
-            self.buttons.append(button)
+            y += rect.height + 10
 
-            button.render(self.surface)
+            path = "faces/"+name+"/0_forward_img.png"
+            if os.path.exists(path):
+
+                img = cv2.imread(path)
+                pg_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                pg_img = np.rot90(pg_img)
+                pg_img = np.flip(pg_img, axis=0)
+                img_surf = pygame.surfarray.make_surface(pg_img)
+                img_surf = pygame.transform.scale(img_surf, (img_size, img_size))
+                self.surface.blit(img_surf, (centre_x - img_size*0.5, y))
+
+            else:
+                pygame.draw.rect(self.surface, colours["foreground"], (centre_x - img_size * 0.5, y, img_size, img_size), self.outline_width)
+
+            y += img_size + 10
+
+            bw = elem_size[0] * 0.7
+            button = Button((centre_x - bw*0.5, y, bw, 60), "Delete User")
+
+            self.buttons.append(button)
+            button.render(self.surface, self.alt_mouse_pos)
 
 
 
@@ -116,6 +161,37 @@ class UserScrollGrid:
                 self.scroll = 0
         if event.type == pygame.MOUSEBUTTONUP:
             self.scroll_grabbed = False
+
+            if self.confirming_remove:
+                popup_width = self.rect.width * 0.45
+                popup_height = self.rect.height* 0.4
+                popup_rect = pygame.Rect(self.rect.centerx - popup_width*0.5, self.rect.centery - popup_height*0.5, popup_width, popup_height)
+
+                y = popup_rect.top + 40
+                remove_text = fonts["medium"].render("Remove " + self.users[self.to_remove] + "?", True, colours["text"])
+
+                y += remove_text.get_height() + 40
+                popup_pad = 10
+                button_height = 120
+                self.confirm_button.set_rect((popup_rect.left+popup_pad, y, popup_rect.width/2 - popup_pad*1.5, button_height))
+                self.deny_button.set_rect((popup_rect.centerx+popup_pad*0.5, y, popup_rect.width/2 - popup_pad*1.5, button_height))
+                if self.confirm_button.process(event):
+                    self.confirming_remove = False
+                    shutil.rmtree("faces/"+self.users[self.to_remove]+"/")
+                    return True
+
+                if self.deny_button.process(event):
+                    self.confirming_remove = False
+            else:
+                if not self.scroll_grabbed:
+                    self.render_surface()
+                    for i,button in enumerate(self.buttons):
+                        if button.process(event, self.alt_mouse_pos):
+                            self.to_remove = i
+                            self.confirming_remove = True
+            return False
+
+
 
     def render(self, surface):
 
@@ -153,6 +229,26 @@ class UserScrollGrid:
         pygame.draw.rect(surface, colours["foreground"], scroll_rect, self.outline_width)
         # scroll rectangle
         pygame.draw.rect(surface, colours["foreground"], (self.rect.right,self.rect.top+scroll_offset,self.scroll_bar_width,bar_height))
+
+        if self.confirming_remove:
+            popup_width = self.rect.width * 0.45
+            popup_height = self.rect.height* 0.4
+            popup_rect = pygame.Rect(self.rect.centerx - popup_width*0.5, self.rect.centery - popup_height*0.5, popup_width, popup_height)
+            pygame.draw.rect(surface, colours["background"], popup_rect)
+            pygame.draw.rect(surface, colours["foreground"], popup_rect, 2)
+
+            y = popup_rect.top + 40
+            remove_text = fonts["medium"].render("Remove " + self.users[self.to_remove] + "?", True, colours["text"])
+            surface.blit(remove_text, (popup_rect.centerx - remove_text.get_rect().width/2, y))
+
+            y += remove_text.get_height() + 40
+            popup_pad = 10
+            button_height = 120
+            self.confirm_button.set_rect((popup_rect.left+popup_pad, y, popup_rect.width/2 - popup_pad*1.5, button_height))
+            self.deny_button.set_rect((popup_rect.centerx+popup_pad*0.5, y, popup_rect.width/2 - popup_pad*1.5, button_height))
+            self.confirm_button.render(surface)
+            self.deny_button.render(surface)
+
 
 
 class Slider:
