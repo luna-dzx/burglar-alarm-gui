@@ -59,7 +59,8 @@ symbols = {
     "error": "\uea87",
     "back": "\U000f030d",
     "home": "\ueb06",
-    "check": "\uf00c"
+    "check": "\uf00c",
+    "cog": "\uf013"
 }
 
 SCROLL_WEIGHT = 0.1

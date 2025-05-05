@@ -43,15 +43,17 @@ def train_model():
     name_index = 0
     names_dict = {}
 
-    for person_name in os.listdir(data_path):
-        person_dir = os.path.join(data_path, person_name)
-        for filename in os.listdir(person_dir):
-            img_path = os.path.join(person_dir, filename)
-            img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-            faces.append(img)
-            labels.append(name_index)
-        names_dict[name_index] = person_name
-        name_index+=1
+    if os.path.exists("faces"):
+
+        for person_name in os.listdir(data_path):
+            person_dir = os.path.join(data_path, person_name)
+            for filename in os.listdir(person_dir):
+                img_path = os.path.join(person_dir, filename)
+                img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+                faces.append(img)
+                labels.append(name_index)
+            names_dict[name_index] = person_name
+            name_index+=1
 
     if len(faces) > 0:
         recognizer.train(faces, np.array(labels))
@@ -178,7 +180,7 @@ def read_profile():
 
 user_profile = read_profile()
 select_font(user_profile["font-size"])
-print(user_profile)
+print(user_profile) # TODO: remove
 
 from enum import Enum
 
@@ -319,7 +321,7 @@ def login_screen(events):
 
 arm_button = Button((0,0,0,0), symbols["lock-closed"])
 disarm_button = Button((0,0,0,0), symbols["lock-open"])
-settings_button = Button((0,0,0,0), "System Settings")
+settings_button = Button((0,0,0,0), "System Settings " + symbols["cog"])
 
 def home_screen(events):
 
@@ -556,6 +558,9 @@ def settings_screen(events):
 
         if change_pin_button.process(event):
             current_screen = Screen.CHANGE_PIN
+            old_pin_field.text = ""
+            new_pin_field.text = ""
+            new_pin2_field.text = ""
 
         if add_face_button.process(event):
             current_screen = Screen.ADD_FACE
@@ -567,6 +572,54 @@ def settings_screen(events):
             current_screen = Screen.PRIVACY_POLICY
 
     high_contrast.render(display)
+
+
+def multi_line_text(words, rect, font, h_pad = 10, comma=False):
+    lines = [[]]
+    width = 0
+    num_words = len(words)
+
+    start_x = rect[0]
+    end_x = rect[0] + rect[2]
+
+    y = rect[1]
+
+    x = start_x + h_pad
+    line_index = 0
+    for i,word in enumerate(words):
+
+        add_string = " "
+        if comma:
+            add_string = ", "
+
+        if i+1 >= num_words:
+            add_string = ""
+
+        new_line = False
+        if word[0] == '\n':
+            new_line = True
+            word = word[1:]
+        text = font.render(word+add_string,True,colours["text"])
+        x += text.get_rect().width
+
+        if x > end_x or new_line: 
+            line_index += 1
+            lines.append([])
+            x = start_x + h_pad + text.get_rect().width
+
+        lines[line_index].append(text)
+
+    height = 0
+
+    for line in lines:
+        x = start_x + h_pad
+        for text in line:
+            rect = text.get_rect()
+            height = max(height, rect.height)
+            display.blit(text, (x,y))
+            x += rect.width
+        y += height
+        height = 0
 
 def live_camera_screen(events):
 
@@ -609,43 +662,10 @@ def live_camera_screen(events):
     y += detected_text.get_rect().height + 20
 
     start_x = centre_x - WIDTH*0.3 / 2
-    end_x = start_x + WIDTH*0.3
     pygame.draw.rect(display, colours["foreground"], (start_x, y, WIDTH*0.3, HEIGHT*0.25), 2)
+    
+    multi_line_text(detections, (start_x, y, WIDTH*0.3, HEIGHT*0.25), fonts["small"], comma=True)
 
-    lines = [[]]
-    width = 0
-    num_names = len(detections)
-
-    h_pad = 10
-    x = start_x + h_pad
-    line_index = 0
-    for i,name in enumerate(detections):
-
-        add_string = ", "
-        if i+1 >= num_names:
-            add_string = ""
-
-        text = fonts["small"].render(name+add_string,True,colours["text"])
-        x += text.get_rect().width
-
-        if x > end_x:
-            line_index += 1
-            lines.append([])
-            x = start_x + h_pad + text.get_rect().width
-
-        lines[line_index].append(text)
-
-    height = 0
-
-    for line in lines:
-        x = start_x + h_pad
-        for text in line:
-            rect = text.get_rect()
-            height = max(height, rect.height)
-            display.blit(text, (x,y))
-            x += rect.width
-        y += height
-        height = 0
 
 def system_history_screen(events):
 
@@ -943,8 +963,28 @@ def add_face_screen(events):
 
 def manage_users_screen(events):
     pass
+
+privacy_policy = """This system uses facial recognition to enhance your property's security. In accordance with the UK General Data Protection Regulation (UK GDPR) and the Data Protection Act 2018, we collect and process facial images of trusted users to authenticate access. This data is processed with your explicit consent and stored securely within the system. 
+ 
+Your facial data is encrypted and never shared with third parties. It is retained for a maximum of 30 days unless linked to a security incident, in which case it may be held slightly longer for investigative purposes. You can withdraw consent or delete your facial data at any time using the control box interface. 
+ 
+By proceeding, you agree to the collection and use of your facial recognition data solely for security purposes. You have the right to access, correct, or delete your data, and to withdraw consent at any time."""
+
+
 def privacy_policy_screen(events):
-    pass
+
+    centre_x = WIDTH/2
+    y = HEADER_HEIGHT + 30
+
+    title_text = fonts["big"].render("Privacy Policy", True, colours["text"])
+    display.blit(title_text, (centre_x - title_text.get_rect().width/2, y))
+
+    y += title_text.get_rect().height + 20
+    rect = (centre_x - WIDTH*0.4, y, WIDTH*0.8, HEIGHT-y - 40)
+    pygame.draw.rect(display, colours["foreground"], rect, 2)
+
+    multi_line_text(privacy_policy.split(' '), rect, fonts["small"])
+
 
 def camera_unlock(events):
 
@@ -1011,7 +1051,7 @@ screen_functions = {
 }
 
 
-current_screen = Screen.LOGIN
+current_screen = Screen.PRIVACY_POLICY
 
 def back_button_dest():
     if current_screen.value < 4:
@@ -1043,6 +1083,10 @@ while running:
     for event in events:
         if event.type == pygame.QUIT:
             running = False
+
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                running = False
 
         if back_dest is not None:
             if back_button.process(event):
