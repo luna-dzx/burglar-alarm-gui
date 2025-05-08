@@ -137,6 +137,11 @@ def get_camera(width, height):
 
     global frame_toggle, last_frame
 
+    if not user_profile["policy-agreed"]:
+        frame = np.zeros((480,640,3), np.uint8)
+        cam_surf = pygame.Surface((640,480))
+        return
+
     if frame_toggle:
         frame = camera_stream.read()
         frame = imutils.resize(frame, width=640)
@@ -423,9 +428,10 @@ def login_screen(events):
     clicked = face_scan_button.render(display)
 
     if clicked:
-        current_screen = Screen.CAMERA_UNLOCK
-        submitted_pin = ""
-        invalid_pin = False
+        if user_profile["policy-agreed"]:
+            current_screen = Screen.CAMERA_UNLOCK
+            submitted_pin = ""
+            invalid_pin = False
 
     y += face_scan_button.rect.height / 2
 
@@ -506,13 +512,16 @@ add_face_button = Button((0,0,0,0), "Add New Face")
 manage_users_button = Button((0,0,0,0), "Manage Stored Users")
 privacy_button = Button((0,0,0,0), "Privacy Policy")
 data_agree_button = Button((0,0,0,0))
+data_disagree_popup_showing = False
+data_disagree_confirm_button = Button((0,0,0,0), "Confirm");
+data_disagree_cancel_button = Button((0,0,0,0), "Cancel");
 
 global data_agree
 data_agree = True
 
 def settings_screen(events):
 
-    global data_agree, current_screen
+    global data_agree, current_screen, data_disagree_popup_showing
 
     pygame.draw.line(display, colours["foreground"], (WIDTH/2, HEADER_HEIGHT), (WIDTH/2, HEIGHT))
 
@@ -664,14 +673,19 @@ def settings_screen(events):
             write_profile(user_profile)
 
         if data_agree_button.process(event):
-            user_profile["policy-agreed"] = not user_profile["policy-agreed"]
-            write_profile(user_profile)
+            if user_profile["policy-agreed"]:
+                data_disagree_popup_showing = True
+            else:
+                user_profile["policy-agreed"] = True
+                write_profile(user_profile)
 
         if live_camera_button.process(event):
-            current_screen = Screen.LIVE_CAMERA
+            if user_profile["policy-agreed"]:
+                current_screen = Screen.LIVE_CAMERA
 
         if system_history_button.process(event):
-            current_screen = Screen.SYSTEM_HISTORY
+            if user_profile["policy-agreed"]:
+                current_screen = Screen.SYSTEM_HISTORY
 
         if change_pin_button.process(event):
             current_screen = Screen.CHANGE_PIN
@@ -680,15 +694,80 @@ def settings_screen(events):
             new_pin2_field.text = ""
 
         if add_face_button.process(event):
-            current_screen = Screen.ADD_FACE
+            if user_profile["policy-agreed"]:
+                current_screen = Screen.ADD_FACE
 
         if manage_users_button.process(event):
-            current_screen = Screen.MANAGE_USERS
+            if user_profile["policy-agreed"]:
+                current_screen = Screen.MANAGE_USERS
 
         if privacy_button.process(event):
             current_screen = Screen.PRIVACY_POLICY
 
     high_contrast.render(display)
+
+    if data_disagree_popup_showing:
+        #findme
+
+        popup_width = WIDTH / 3
+        popup_height = HEIGHT / 3
+        inner_height = HEIGHT - HEADER_HEIGHT
+        popup_rect = pygame.Rect((WIDTH-popup_width) / 2, (inner_height-popup_height) / 2 + HEADER_HEIGHT,
+                                 popup_width, popup_height)
+
+        pygame.draw.rect(display, colours["background"], popup_rect)
+        pygame.draw.rect(display, colours["foreground"], popup_rect, 2)
+
+        y = popup_rect.top + 10
+        centre_x = WIDTH/2
+
+        popup1_text = fonts["medium"].render("Are you sure?", True, colours["text"])
+        display.blit(popup1_text, (centre_x - popup1_text.get_rect().width/2, y))
+
+        y += popup1_text.get_rect().height
+
+        popup2_text = fonts["medium"].render("This will delete all face data", True, colours["text"])
+        display.blit(popup2_text, (centre_x - popup2_text.get_rect().width/2, y))
+
+        y += popup2_text.get_rect().height
+
+
+        yDiff = popup_rect.bottom - y
+        y += yDiff / 2
+
+        button_height = popup_height / 4
+        button_width = popup_width / 3
+
+        y -= button_height / 2
+
+        padding = (popup_width - 2*button_width)/3
+
+        x = popup_rect.left + padding
+
+        data_disagree_confirm_button.set_rect((x,y,button_width,button_height))
+
+        x += button_width + padding
+        data_disagree_cancel_button.set_rect((x,y,button_width,button_height))
+
+        data_disagree_confirm_button.render(display)
+        data_disagree_cancel_button.render(display)
+
+        for event in events:
+            if data_disagree_confirm_button.process(event):
+
+                shutil.rmtree("faces/")
+                os.makedirs("faces/")
+                train_model()
+
+                user_profile["policy-agreed"] = False
+                write_profile(user_profile)
+
+                data_disagree_popup_showing = False
+            if data_disagree_cancel_button.process(event):
+                data_disagree_popup_showing = False
+
+
+        #data_disagree_confirm_button.set_rect(())
 
 def multi_line_text(words, rect, font, h_pad = 10, comma=False):
     lines = [[]]
