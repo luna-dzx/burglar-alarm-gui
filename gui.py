@@ -1,8 +1,11 @@
 # arduino serial communication
 import time, serial
 from enum import Enum
+from imutils.video import VideoStream
 
-arduino = serial.Serial('/dev/ttyACM0', baudrate=9600, timeout=0.1)
+arduino_enabled = False
+if arduino_enabled:
+    arduino = serial.Serial('/dev/ttyACM0', baudrate=9600, timeout=0.1)
 
 class Message(Enum):
     ARM = 1
@@ -11,6 +14,10 @@ class Message(Enum):
     VOLUME = 4
 
 def arduino_signal(msg, arg=0):
+
+    if not arduino_enabled:
+        return
+
     while True:
 
         i = msg.value
@@ -32,20 +39,31 @@ def arduino_signal(msg, arg=0):
         else:
             print("Arduino Error, received: '"+data+"'")
 
-# set this to load camera faster
 import os
-os.environ["OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS"] = "0"
+import imutils
+
+# set this to load opencv camera faster
+#os.environ["OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS"] = "0"
 
 # load camera:
 import cv2
 import numpy as np
 
-vc = cv2.VideoCapture(0)
+camera_stream = VideoStream(src=1).start()
 
-if vc.isOpened(): # try to get the first frame
-    running, frame = vc.read()
-else:
+#vc = cv2.VideoCapture(0)
+
+#if vc.isOpened(): # try to get the first frame
+#    running, frame = vc.read()
+#else:
+#    running = False
+
+frame = camera_stream.read()
+
+running = True
+if frame is None:
     running = False
+
 
 # exit if camera not working:
 import sys
@@ -55,11 +73,18 @@ if not running:
 print("camera loaded")
 
 # load haar cascade for detecting face
-facedetect = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
-haar_finds = []
-i = 0
+#facedetect = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+#haar_finds = []
+#i = 0
 
-print("haar cascade loaded")
+model = "res10_300x300_ssd_iter_140000.caffemodel"
+prototxt = "deploy.prototxt"
+confidence_threshold = 0.5
+
+net = cv2.dnn.readNetFromCaffe(prototxt, model)
+
+
+print("DNN Face Detection Model loaded")
 
 # load LBHF for recognizing face
 recognizer = cv2.face.LBPHFaceRecognizer_create()
@@ -113,11 +138,11 @@ def get_camera(width, height):
     global frame_toggle, last_frame
 
     if frame_toggle:
-        rval, frame = vc.read()
+        frame = camera_stream.read()
+        frame = imutils.resize(frame, width=640)
         frame_toggle = False
         last_frame = frame
     else:
-        rval = True
         frame = last_frame
         frame_toggle = True
 
@@ -126,7 +151,7 @@ def get_camera(width, height):
     pg_frame = np.flip(pg_frame, axis=0)
     cam_surf = pygame.transform.scale(pygame.surfarray.make_surface(pg_frame), (width,height))
 
-    return rval, frame, cam_surf
+    return frame, cam_surf
 
 
 global last_img
@@ -134,13 +159,20 @@ global last_img
 def recognize_faces(surface, frame, frame_size, skip_render = False):
     global last_img, model_trained
 
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    haar_detection = facedetect.detectMultiScale(gray, 1.3, 3)
+    #haar_detection = facedetect.detectMultiScale(gray, 1.3, 3)
+
+    (h, w) = frame.shape[:2]
+    blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)), 1.0, (300, 300), (104.0, 177.0, 123.0))
+
+    net.setInput(blob)
+    detections = net.forward()
+
 
     x_offset, y_offset, width, height = frame_size
-
     xr = width/640
     yr = height/480
+
+    """
 
     detections = []
 
@@ -168,7 +200,39 @@ def recognize_faces(surface, frame, frame_size, skip_render = False):
             surface.blit(text_surface, (x_offset+x*xr,y_offset+(y+h)*yr))
 
     return detections
+    """
 
+    # https://pyimagesearch.com/2018/02/26/face-detection-with-opencv-and-deep-learning/
+
+    names_detected = []
+
+    for i in range(0, detections.shape[2]):
+        confidence = detections[0, 0, i, 2]
+        if confidence < confidence_threshold:
+            continue
+        box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+        (startX, startY, endX, endY) = box.astype("int")
+
+        last_img = frame[startY:endY, startX:endX, :]
+
+        pygame.draw.rect(surface, (255,0,0), (x_offset+xr*startX, y_offset+yr*startY, xr*(endX-startX), yr*(endY-startY)), 2)
+
+        if not model_trained:
+            continue
+
+        crop_gray = cv2.cvtColor(last_img, cv2.COLOR_BGR2GRAY)
+        label, confidence = recognizer.predict(crop_gray)
+
+        if confidence < 45:
+            label_string = names_dict[label]
+            names_detected.append(label_string)
+        else:
+            label_string = "???"
+
+        text = fonts["small"].render(label_string, True, (255,0,0))
+        display.blit(text, (x_offset+xr*startX, y_offset+yr*endY))
+
+    return names_detected
 
 # rendering:
 import pygame
@@ -686,7 +750,7 @@ def live_camera_screen(events):
 
     camera_area_rect = (camera_area_x, camera_area_y, camera_area_width, camera_area_height)
 
-    rval, frame, cam_surf = get_camera(camera_area_width, camera_area_height)
+    frame, cam_surf = get_camera(camera_area_width, camera_area_height)
 
     display.blit(cam_surf, (camera_area_x, camera_area_y))
     pygame.draw.rect(display, colours["foreground"], camera_area_rect, 2)
@@ -874,7 +938,7 @@ def add_face_screen(events):
 
     camera_area_rect = (camera_area_x, camera_area_y, camera_area_width, camera_area_height)
 
-    rval, frame, cam_surf = get_camera(camera_area_width, camera_area_height)
+    frame, cam_surf = get_camera(camera_area_width, camera_area_height)
 
     display.blit(cam_surf, (camera_area_x, camera_area_y))
     pygame.draw.rect(display, colours["foreground"], camera_area_rect, 2)
@@ -1018,7 +1082,20 @@ def add_face_screen(events):
 
         for i in range(3):
             image = add_images[i]
-            display.blit(pygame.transform.scale(image, (img_diameter, img_diameter)), (x,y))
+            #display.blit(pygame.transform.scale(image, (img_diameter, img_diameter)), (x,y))
+            (sw, sh) = image.get_size()
+            x_off = 0
+            y_off = 0
+
+            r = 1
+            if sw < sh:
+                r = img_diameter/sh
+                x_off = (img_diameter - r*sw) / 2
+            elif sw > sh:
+                r = img_diameter/sw
+                y_off = (img_diameter - r*sh) / 2
+
+            display.blit(pygame.transform.scale(image, (sw*r,sh*r)), (x_off+x,y_off+y))
 
             x += img_diameter + 10
 
@@ -1082,7 +1159,7 @@ def camera_unlock(events):
 
     camera_area_rect = (camera_area_x, camera_area_y, camera_area_width, camera_area_height)
 
-    rval, frame, cam_surf = get_camera(camera_area_width, camera_area_height)
+    frame, cam_surf = get_camera(camera_area_width, camera_area_height)
 
     display.blit(cam_surf, (camera_area_x, camera_area_y))
     pygame.draw.rect(display, colours["foreground"], camera_area_rect, 2)
