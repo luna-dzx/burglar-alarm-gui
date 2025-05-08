@@ -1,3 +1,37 @@
+# arduino serial communication
+import time, serial
+from enum import Enum
+
+arduino = serial.Serial('/dev/ttyACM0', baudrate=9600, timeout=0.1)
+
+class Message(Enum):
+    ARM = 1
+    DISARM = 2
+    ALARM = 3
+    VOLUME = 4
+
+def arduino_signal(msg, arg=0):
+    while True:
+
+        i = msg.value
+        if msg == Message.VOLUME:
+            a = int(arg)
+            if a < 0:
+                a = 0
+            if a > 255:
+                a = 255
+            i = a + 4
+
+        msg_str = str(i)
+        arduino.write(bytes(msg_str,"utf-8"))
+        time.sleep(0.1)
+        data = arduino.readline().decode("utf-8")
+        if data == "0":
+            print("Acknowledgement Received")
+            return
+        else:
+            print("Arduino Error, received: '"+data+"'")
+
 # set this to load camera faster
 import os
 os.environ["OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS"] = "0"
@@ -195,7 +229,6 @@ def log_action(name,action):
     user_profile["system-log"][2].append(time)
     write_profile(user_profile)
 
-from enum import Enum
 
 
 HEADER_HEIGHT = HEIGHT * 0.15
@@ -249,14 +282,15 @@ def system_activity():
 
 
 pin_inp = TextField((0, 0), max_length=6, numbers_only=True, always_active=True, min_width = 200)
-global invalid_pin, current_screen
+global invalid_pin, current_screen, invalid_pin_attempts
 invalid_pin = False
+invalid_pin_attempts = 0
 
 face_scan_button = Button((0,0,SIDE_BAR_OFFSET*0.3, SIDE_BAR_OFFSET*0.3 * (3.0/4.0)), symbols["camera"], font_size = 2)
 
 def login_screen(events):
 
-    global invalid_pin, current_screen, system_armed
+    global invalid_pin, current_screen, system_armed, invalid_pin_attempts 
 
     submitted_pin = ""
     for event in events:
@@ -271,8 +305,13 @@ def login_screen(events):
             system_locked = False
             submitted_pin = ""
             invalid_pin = False
+            invalid_pin_attempts = 0
+            arduino_signal(Message.DISARM)
         else:
             invalid_pin = True
+            invalid_pin_attempts += 1
+            if invalid_pin_attempts == 3:
+                arduino_signal(Message.ALARM)
 
     system_activity()
     
@@ -333,7 +372,7 @@ settings_button = Button((0,0,0,0), "System Settings " + symbols["cog"])
 
 def home_screen(events):
 
-    global system_armed, current_screen
+    global system_armed, current_screen, invalid_pin_attempts
     
     system_activity()
 
@@ -367,7 +406,9 @@ def home_screen(events):
 
     if arm_button.render(display):
         system_armed = True
+        arduino_signal(Message.ARM)
         current_screen = Screen.LOGIN
+        invalid_pin_attempts = 0
     if disarm_button.render(display):
         system_armed = False
 
@@ -475,6 +516,7 @@ def settings_screen(events):
     slider_val = alarm_slider.render(display)
     if slider_val is not None:
         user_profile["alarm-volume"] = slider_val
+        arduino_signal(Message.VOLUME, slider_val*255)
         write_profile(user_profile)
 
     y += alarm_volume_text.get_rect().height + 40
@@ -1029,7 +1071,7 @@ def privacy_policy_screen(events):
 
 def camera_unlock(events):
 
-    global current_screen, system_locked
+    global current_screen, system_locked, invalid_pin_attempts
 
     PADDING = 40
     camera_area_height = HEIGHT-(HEADER_HEIGHT+PADDING)-PADDING
@@ -1049,9 +1091,12 @@ def camera_unlock(events):
 
     if len(detections) > 0:
         system_locked = False
+        system_armed = False
         current_screen = Screen.HOME
+        arduino_signal(Message.DISARM)
         display.fill(colours["background"])
         log_action(detections[0], "Unlocked")
+        invalid_pin_attempts = 0
         return
 
     centre_x = camera_area_x / 2
@@ -1101,6 +1146,7 @@ def back_button_dest():
     elif current_screen.value < 10:
         return Screen.SETTINGS
     else:
+        invalid_pin_attempts = 0
         return Screen.LOGIN
 
 def home_button_dest():
@@ -1110,7 +1156,7 @@ def home_button_dest():
     else:
         return Screen.HOME
 
-import time,math
+import math
 no_input_timestamp = time.time()
 
 
@@ -1122,6 +1168,7 @@ while running:
     countdown = TIMEOUT_DURATION - (current_time - no_input_timestamp)
     if countdown <= 0 and current_screen.value > 1:
         current_screen = Screen.LOGIN
+        invalid_pin_attempts = 0
 
     events = pygame.event.get()
 
